@@ -1,17 +1,14 @@
-Package: cmaes
-Version: 1.0-11
+Package: cmaes_hpc
+Version: 1.0.0
 Title: Covariance Matrix Adapting Evolutionary Strategy
 Description: Single objective optimization using a CMA-ES.
-Author: Heike Trautmann <trautmann@statistik.tu-dortmund.de> and Olaf
+Author: Dan Taranu <dan.s.taranu@gmail.com> and Heike 
+        Trautmann <trautmann@statistik.tu-dortmund.de> and Olaf
         Mersmann <olafm@statistik.tu-dortmund.de> and David Arnu
         <david.arnu@statistik.tu-dortmund.de>
-Maintainer: Olaf Mersmann <olafm@statistik.tu-dortmund.de>
+Maintainer: Dan Taranu <dan.s.taranu@gmail.com>
 Depends: R (>= 2.9.0)
 Suggests: RUnit
-License: GPL-2
+License: GPL-3
 LazyData: yes
-Collate: 'cmaes.R' 'functions.R'
-Date:
-Packaged: 2011-01-29 00:26:09 UTC; olafm
-Repository: CRAN
-Date/Publication: 2011-01-29 08:35:53
+Collate: 'cmaes_hpc.R' 'functions.R'

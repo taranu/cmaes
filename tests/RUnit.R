@@ -5,7 +5,7 @@
 ## turn is based on code from the 'gdata' package.
 ##
 
-pkg <- "cmaes"
+pkg <- "cmaes_hpc"
 
 if (require("RUnit", quietly=TRUE)) {
   wd <- getwd()

@@ -1,5 +1,5 @@
 ##
-## cmaes.R - covariance matrix adapting evolutionary strategy
+## cmaes_hpc.R - covariance matrix adapting evolutionary strategy
 ##
 
 ##' Global optimization procedure using a covariance matrix adapting
@@ -28,6 +28,8 @@
 ##'     performed on \code{fn(par)/fnscale}.}
 ##'   \item{\code{maxit}}{The maximum number of iterations. Defaults to
 ##'     \eqn{100*D^2}, where \eqn{D} is the dimension of the parameter space.}
+##'   \item{\code{maxwalltime}}{The maximum walltime in minutes. Defaults to
+##'      infinite, i.e. no time limit.}
 ##'   \item{\code{stopfitness}}{Stop if function value is smaller than or
 ##'     equal to \code{stopfitness}. This is the only way for the CMA-ES
 ##'     to \dQuote{converge}.}
@@ -90,7 +92,8 @@
 ##'    These are only present if the respective diagnostic control variable is
 ##'    set to \code{TRUE}.}}
 ##'
-##' @source The code is based on \file{purecmaes.m} by N. Hansen.
+##' @source The vast majority of the code is from the "cmaes" package (\file{cmaes.R}),
+##'   which itself is based on \file{purecmaes.m} by N. Hansen
 ##'
 ##' @seealso \code{\link{extract_population}}
 ##' 
@@ -99,14 +102,17 @@
 ##'   new evolutionary computation. Advances in estimation of distribution
 ##'   algorithms. pp. 75-102, Springer
 ##'
-##' @author Olaf Mersmann \email{olafm@@statistik.tu-dortmund.de} and
+##' @author Dan Taranu \email{dan.s.taranu@gmail.com}; originally written by 
+##'   Olaf Mersmann \email{olafm@@statistik.tu-dortmund.de} and
 ##'   David Arnu \email{david.arnu@@tu-dortmun.de}
 ##'
 ##' @title Covariance matrix adapting evolutionary strategy
 ##'
 ##' @keywords optimize
 ##' @export
-cma_es <- function(par, fn, ..., lower, upper, control=list()) {
+cmaes_hpc <- function(par, fn, ..., lower, upper, control=list())
+{
+  time_start = proc.time()[['elapsed']]
   norm <- function(x)
     drop(sqrt(crossprod(x)))
   
@@ -137,6 +143,7 @@ cma_es <- function(par, fn, ..., lower, upper, control=list()) {
   fnscale     <- controlParam("fnscale", 1)
   stopfitness <- controlParam("stopfitness", -Inf)
   maxiter     <- controlParam("maxit", 100 * N^2)
+  maxwalltime <- controlParam("maxwalltime", Inf)
   sigma       <- controlParam("sigma", 0.5)
   sc_tolx     <- controlParam("stop.tolx", 1e-12 * sigma) ## Undocumented stop criterion
   keep.best   <- controlParam("keep.best", TRUE)
@@ -168,15 +175,26 @@ cma_es <- function(par, fn, ..., lower, upper, control=list()) {
   stopifnot(length(upper) == N)  
   stopifnot(length(lower) == N)
   stopifnot(all(lower < upper))
-  stopifnot(length(sigma) == 1)
-
+  stopifnot(length(sigma) == 1 || length(sigma) == N)
+  maxiter <- floor(maxiter)
+  
   ## Bookkeeping variables for the best solution found so far:
   best.fit <- Inf
   best.par <- NULL
 
+  
+  sigmaisvec = length(sigma) > 1
+  
   ## Preallocate logging structures:
   if (log.sigma)
-    sigma.log <- numeric(maxiter)
+    if (sigmaisvec)
+    {
+      sigma.log <- matrix(0, nrow=maxiter, ncol=N)  
+    }
+  else
+  {
+    sigma.log <- numeric(maxiter) 
+  }
   if (log.eigen)
     eigen.log <- matrix(0, nrow=maxiter, ncol=N)
   if (log.value)
@@ -203,7 +221,11 @@ cma_es <- function(par, fn, ..., lower, upper, control=list()) {
   ## Preallocate work arrays:
   arx <- matrix(0.0, nrow=N, ncol=lambda)
   arfitness <- numeric(lambda)
-  while (iter < maxiter) {
+  
+  time_elapsed = (proc.time()[['elapsed']] - time_start)/60.0
+  
+  while (iter < maxiter && time_elapsed < maxwalltime) 
+  {
     iter <- iter + 1L
 
     if (!keep.best) {
@@ -211,8 +233,10 @@ cma_es <- function(par, fn, ..., lower, upper, control=list()) {
       best.par <- NULL
     }
     if (log.sigma)
-      sigma.log[iter] <- sigma
-
+    {
+      sigma.log[iter,] <- sigma
+    }
+    
     ## Generate new population:
     arz <- matrix(rnorm(N*lambda), ncol=lambda)
     arx <- xmean + sigma * (BD %*% arz)
@@ -232,9 +256,16 @@ cma_es <- function(par, fn, ..., lower, upper, control=list()) {
 
     arfitness <- y * pen
     valid <- pen <= 1
-    if (any(valid)) {
+    valid[!is.finite(y)] = FALSE
+    if (any(valid))
+    {
       wb <- which.min(y[valid])
-      if (y[valid][wb] < best.fit) {
+      if(is.nan(wb) || is.null(wb) || is.na(wb))
+      {
+        stop(paste("wb=",wb," is null/nan/na; aborting"))
+      }
+      if (y[valid][wb] < best.fit) 
+      {
         best.fit <- y[valid][wb]
         best.par <- arx[,valid,drop=FALSE][,wb]
       }
@@ -281,8 +312,23 @@ cma_es <- function(par, fn, ..., lower, upper, control=list()) {
     D <- diag(sqrt(e$values), length(e$values))
     BD <- B %*% D
 
+    
+    narf = length(arfitness)
+    compi = min(1+floor(lambda/2), 2+ceiling(lambda/4))
+    while(is.nan(arfitness[compi]) && compi < narf)
+    {
+      compi = compi + 1
+    }
+    comparf = arfitness[compi]
+    arfi = 1
+    while(is.nan(arfitness[arfi]) && arfi < compi)
+    {
+      arfi = arfi + 1
+    }
+    firstarf = arfitness[arfi]
+    
     ## break if fit:
-    if (arfitness[1] <= stopfitness * fnscale) {
+    if (firstarf <= stopfitness * fnscale) {
       msg <- "Stop fitness reached."
       break
     }
@@ -290,28 +336,46 @@ cma_es <- function(par, fn, ..., lower, upper, control=list()) {
     ## Check stop conditions:
 
     ## Condition 1 (sd < tolx in all directions):
-    if (all(D < sc_tolx) && all(sigma * pc < sc_tolx)) {
+    # Removed original condition: all(diag(D) < sc_tolx)) - it doesn't make sense to me
+    if (all(abs(sigma * pc) < sc_tolx)) {
       msg <- "All standard deviations smaller than tolerance."
       break
     }
     
     ## Escape from flat-land:
-    if (arfitness[1] == arfitness[min(1+floor(lambda/2), 2+ceiling(lambda/4))]) { 
+    if (!is.nan(firstarf) && !is.nan(comparf) && 
+          !is.na(firstarf) && !is.na(comparf) && 
+          (firstarf == comparf)) 
+    { 
       sigma <- sigma * exp(0.2+cs/damps);
       if (trace)
         message("Flat fitness function. Increasing sigma.")
     }
+    time_elapsed = (proc.time()[['elapsed']] - time_start)/60.0
     if (trace)
-      message(sprintf("Iteration %i of %i: current fitness %f",
-                      iter, maxiter, arfitness[1] * fnscale))
+    {
+      message(sprintf("Iteration %i of %i, t_elapsed=%.2f/%.2f: current fitness %f, sigma=[%s]",
+                      iter, maxiter, time_elapsed, maxwalltime, arfitness[1] * fnscale,
+                      paste(sprintf("%.2e",sigma),collapse=' ')))
+    }
   }
   cnt <- c(`function`=as.integer(counteval), gradient=NA)
-
-  log <- list()
+  
+  log <- list(walltime=time_elapsed)
   ## Subset lognostic data to only include those iterations which
   ## where actually performed.
   if (log.value) log$value <- value.log[1:iter,]
-  if (log.sigma) log$sigma <- sigma.log[1:iter]
+  if (log.sigma) 
+  {
+    if(sigmaisvec)
+    {
+      log$sigma <- sigma.log[1:iter,]
+    }
+    else
+    {
+      log$sigma <- sigma.log[1:iter] 
+    }
+  }
   if (log.eigen) log$eigen <- eigen.log[1:iter,]
   if (log.pop)   log$pop   <- pop.log[,,1:iter]
 
@@ -324,16 +388,9 @@ cma_es <- function(par, fn, ..., lower, upper, control=list()) {
               message=msg,
               constr.violations=cviol,
               diagnostic=log
-              )
+  )
   class(res) <- "cma_es.result"
   return(res)
-}
-
-##' @rdname cma_es
-##' @export
-cmaES <- function(...) {
-  .Deprecated("cma_es")
-  cma_es(...)
 }
 
 ##' Extract the \code{iter}-th population
