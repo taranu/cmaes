@@ -1,5 +1,5 @@
 ##
-## cmaes_hpc.R - covariance matrix adapting evolutionary strategy
+## cmaeshpc.R - covariance matrix adapting evolutionary strategy
 ##
 
 ##' Global optimization procedure using a covariance matrix adapting
@@ -31,8 +31,8 @@
 ##'   \item{\code{maxwalltime}}{The maximum walltime in minutes. Defaults to
 ##'      infinite, i.e. no time limit.}
 ##'   \item{\code{stopfitness}}{Stop if function value is smaller than or
-##'     equal to \code{stopfitness}. This is the only way for the CMA-ES
-##'     to \dQuote{converge}.}
+##'     equal to \code{stopfitness}. This is the main way for the CMA-ES
+##'     to \dQuote{converge}, but see also \dQuote{stop.tolx}.}
 ##'   \item{keep.best}{return the best overall solution and not the best
 ##'     solution in the last population. Defaults to true.}
 ##'   \item{\code{sigma}}{Inital variance estimates. Can be a single
@@ -55,6 +55,9 @@
 ##'   \item{\code{diag.pop}}{Save current population in each iteration.}
 ##'   \item{\code{diag.value}}{Save function values of the current
 ##'     population in each iteration.}}
+##'   \item{\code{stop.tolx}}{Relative tolerance convergence criterion,
+##'     as a fraction of the initial \eqn{\sigma}. Defaults to a tiny 
+##'     value of 1e-12.}
 ##'
 ##' @param par Initial values for the parameters to be optimized over.
 ##' @param fn A function to be minimized (or maximized), with first
@@ -110,7 +113,7 @@
 ##'
 ##' @keywords optimize
 ##' @export
-cmaes_hpc <- function(par, fn, ..., lower, upper, control=list())
+cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
 {
   time_start = proc.time()[['elapsed']]
   norm <- function(x)
@@ -166,10 +169,10 @@ cmaes_hpc <- function(par, fn, ..., lower, upper, control=list())
   cs          <- controlParam("cs", (mueff+2)/(N+mueff+3))
   mucov       <- controlParam("ccov.mu", mueff)
   ccov        <- controlParam("ccov.1",
-                              (1/mucov) * 2/(N+1.4)^2
-                              + (1-1/mucov) * ((2*mucov-1)/((N+2)^2+2*mucov)))
+                  (1/mucov) * 2/(N+1.4)^2 + 
+                  (1-1/mucov) * ((2*mucov-1)/((N+2)^2+2*mucov)))
   damps       <- controlParam("damps",
-                              1 + 2*max(0, sqrt((mueff-1)/(N+1))-1) + cs)
+                  1 + 2*max(0, sqrt((mueff-1)/(N+1))-1) + cs)
 
   ## Safety checks:
   stopifnot(length(upper) == N)  

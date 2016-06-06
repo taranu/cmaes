@@ -1,5 +1,4 @@
-export(cma_es)
-export(cmaES)
+export(cmaeshpc)
 export(extract_population)
 export(shift_function)
 export(rotate_function)
