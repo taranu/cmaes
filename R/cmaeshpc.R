@@ -30,6 +30,8 @@
 ##'     \eqn{100*D^2}, where \eqn{D} is the dimension of the parameter space.}
 ##'   \item{\code{maxwalltime}}{The maximum walltime in minutes. Defaults to
 ##'      infinite, i.e. no time limit.}
+##'   \item{\code{nthreads}}{Number of independent threads to run using 
+##'     mcparallel. Should not exceed number of system CPUS.}
 ##'   \item{\code{stopfitness}}{Stop if function value is smaller than or
 ##'     equal to \code{stopfitness}. This is the main way for the CMA-ES
 ##'     to \dQuote{converge}, but see also \dQuote{stop.tolx}.}
@@ -115,7 +117,6 @@
 ##' @export
 cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
 {
-  time_start = proc.time()[['elapsed']]
   norm <- function(x)
     drop(sqrt(crossprod(x)))
   
@@ -127,6 +128,22 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
       return (v)
   }
 
+  nthreads <- controlParam("nthreads", 1)
+  if(nthreads > 1)
+  {
+    control$nthreads=1
+    res = list()
+    for(i in 1:nthreads)
+    { 
+      res[[i]] = mcparallel(cmaeshpc(par=par, fn=fn, lower=lower, upper=upper, 
+        control=control, ...))
+    }
+    rval = mccollect(res)
+    return(rval)
+  }
+  
+  time_start = proc.time()[['elapsed']]
+  
   ## Inital solution:
   xmean <- par
   N <- length(xmean)
@@ -175,7 +192,7 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
                   1 + 2*max(0, sqrt((mueff-1)/(N+1))-1) + cs)
 
   ## Safety checks:
-  stopifnot(length(upper) == N)  
+  stopifnot(length(upper) == N)
   stopifnot(length(lower) == N)
   stopifnot(all(lower < upper))
   stopifnot(length(sigma) == 1 || length(sigma) == N)
