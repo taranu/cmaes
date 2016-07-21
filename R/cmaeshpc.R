@@ -240,11 +240,13 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
 
   ## Preallocate work arrays:
   arx <- matrix(0.0, nrow=N, ncol=lambda)
+  arz <- matrix(0.0, nrow=N, ncol=lambda)
   arfitness <- numeric(lambda)
   
   time_elapsed = (proc.time()[['elapsed']] - time_start)/60.0
   
-  while (iter < maxiter && time_elapsed < maxwalltime) 
+  continue <- TRUE
+  while (iter < maxiter && continue) 
   {
     iter <- iter + 1L
 
@@ -258,19 +260,33 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
     }
     
     ## Generate new population:
-    arz <- matrix(rnorm(N*lambda), ncol=lambda)
-    arx <- xmean + sigma * (BD %*% arz)
-    vx <- ifelse(arx > lower, ifelse(arx < upper, arx, upper), lower)
-    if (!is.null(nm))
-      rownames(vx) <- nm
-    pen <- 1 + colSums((arx - vx)^2)
-    pen[!is.finite(pen)] <- .Machine$double.xmax / 2
-    cviol <- cviol + sum(pen > 1)
-
-    if (vectorized) {
-      y <- fn(vx, ...) * fnscale
-    } else {
-      y <- apply(vx, 2, function(x) fn(x, ...) * fnscale)
+    y <- numeric(lambda)*NA
+    pen <- y
+    ## Keep iterating until all of the likelihoods are finite
+    while(!all(is.finite(y))) {
+      toeval = which(!is.finite(y))
+      neval = length(toeval)
+      arze <- matrix(rnorm(neval*N), ncol=lambda)
+      arxe <- xmean + sigma * (BD %*% arze)
+      vx <- ifelse(arxe > lower, ifelse(arxe < upper, arxe, upper), lower)
+      if (!is.null(nm))
+        rownames(vx) <- nm
+      peneval <- 1 + colSums((arxe - vx)^2)
+      peneval[!is.finite(peneval)] <- .Machine$double.xmax / 2
+      cviol <- cviol + sum(peneval > 1)
+  
+      if (vectorized) {
+        yeval <- fn(vx, ...) * fnscale
+      } else {
+        yeval <- apply(vx, 2, function(x) fn(x, ...) * fnscale)
+      }
+      y[toeval] = yeval
+      pen[toeval] = peneval
+      for(evali in 1:neval) {
+        cole = toeval[evali]
+        arx[,cole] = arxe[,evali]
+        arz[,cole] = arze[,evali]
+      }
     }
     counteval <- counteval + lambda
 
@@ -378,6 +394,8 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
                       iter, maxiter, time_elapsed, maxwalltime, arfitness[1] * fnscale,
                       paste(sprintf("%.2e",sigma),collapse=' ')))
     }
+    # Check if there's enough time to continue
+    continue <- time_elapsed*(iter+1)/iter < maxwalltime
   }
   cnt <- c(`function`=as.integer(counteval), gradient=NA)
   
