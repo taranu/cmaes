@@ -1,7 +1,7 @@
 Package: cmaeshpc
 Version: 1.0.0
-Title: Covariance Matrix Adapting Evolutionary Strategy
-Description: Single objective optimization using a CMA-ES.
+Title: Covariance Matrix Adapting Evolutionary Strategy for High Performance Computing
+Description: Single objective multi-threaded optimization using a CMA-ES optimizer.
 Author: Dan Taranu <dan.s.taranu@gmail.com> and Heike 
         Trautmann <trautmann@statistik.tu-dortmund.de> and Olaf
         Mersmann <olafm@statistik.tu-dortmund.de> and David Arnu
