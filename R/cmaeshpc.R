@@ -107,7 +107,7 @@
 ##'   new evolutionary computation. Advances in estimation of distribution
 ##'   algorithms. pp. 75-102, Springer
 ##'
-##' @author Dan Taranu \email{dan.s.taranu@gmail.com}; originally written by 
+##' @author Dan Taranu \email{dan.s.taranu@@gmail.com}; originally written by 
 ##'   Olaf Mersmann \email{olafm@@statistik.tu-dortmund.de} and
 ##'   David Arnu \email{david.arnu@@tu-dortmun.de}
 ##'
@@ -423,6 +423,7 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
               value=best.fit / fnscale,
               counts=cnt,
               convergence=ifelse(iter >= maxiter, 1L, 0L),
+              covar=C,
               message=msg,
               constr.violations=cviol,
               diagnostic=log
