@@ -224,11 +224,11 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
   
   ## Initialize dynamic (internal) strategy parameters and constants
   pc <- rep(0.0, N)
-  ps <- rep(0.0, N)
+  ps <- pc
   B <- diag(N)
-  D <- diag(N)
-  BD <- B %*% D
-  C <- BD %*% t(BD)
+  D <- B
+  BD <- B
+  C <- B
 
   chiN <- sqrt(N) * (1-1/(4*N)+1/(21*N^2))
   
@@ -266,7 +266,7 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
     while(!all(is.finite(y))) {
       toeval = which(!is.finite(y))
       neval = length(toeval)
-      arze <- matrix(rnorm(neval*N), ncol=lambda)
+      arze <- matrix(rnorm(neval*N), ncol=neval)
       arxe <- xmean + sigma * (BD %*% arze)
       vx <- ifelse(arxe > lower, ifelse(arxe < upper, arxe, upper), lower)
       if (!is.null(nm))
