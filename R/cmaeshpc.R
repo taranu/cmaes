@@ -390,9 +390,9 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
     time_elapsed = (proc.time()[['elapsed']] - time_start)/60.0
     if (trace)
     {
-      message(sprintf("Iteration %i of %i, t_elapsed=%.2f/%.2f: current fitness %f, sigma=[%s]",
+      message(sprintf("Iteration %i of %i, t_elapsed=%.2f/%.2f: current fitness %f, params=[%s], sigmas=[%s]",
                       iter, maxiter, time_elapsed, maxwalltime, arfitness[1] * fnscale,
-                      paste(sprintf("%.2e",sigma),collapse=' ')))
+                      paste(sprintf("%.2e",xmean),collapse=' '),paste(sprintf("%.2e",sigma),collapse=' ')))
     }
     # Check if there's enough time to continue
     continue <- time_elapsed*(iter+1)/iter < maxwalltime
