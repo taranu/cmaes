@@ -19,6 +19,13 @@
 ##' \code{lambda} corresponding function values. This enables you to
 ##' do up to \code{lambda} function evaluations in parallel.
 ##'
+##' There are two alternative modes of parallelization. \code{nparallel} 
+##' specifies the number of fits to run in parallel and independently. 
+##' \code{nthreads} specifies the number of \code{fn} evaluations to 
+##' calculate in parallel. Both use the mcparallel function internally.
+##' \code{nthreads} is incompatible with \code{vectorize}, but does not 
+##' require parallelization of \code{fn} itself.
+##'
 ##' The \code{control} argument is a list that can supply any of the
 ##' following components:
 ##' \describe{
@@ -30,16 +37,27 @@
 ##'     \eqn{100*D^2}, where \eqn{D} is the dimension of the parameter space.}
 ##'   \item{\code{maxwalltime}}{The maximum walltime in minutes. Defaults to
 ##'      infinite, i.e. no time limit.}
-##'   \item{\code{nthreads}}{Number of independent threads to run using 
-##'     mcparallel. Should not exceed number of system CPUS.}
 ##'   \item{\code{stopfitness}}{Stop if function value is smaller than or
 ##'     equal to \code{stopfitness}. This is the main way for the CMA-ES
 ##'     to \dQuote{converge}, but see also \dQuote{stop.tolx}.}
+##'   \item{\code{nparallel}}{Number of independent CMA-ES fits to run using 
+##'     mcparallel. This is equivalent to calling cmaeshpc nparallel times. 
+##'     The product of \code{nparallel} and \code{nthreads} should not 
+##'     exceed number of system CPUS.}
+##'   \item{\code{nthreads}}{Number of independent threads to evaluate models
+##'     with using mcparallel. This will complete each CMA chain more quickly. 
+##'     The product of \code{nparallel} and \code{nthreads} should not 
+##'     exceed number of system CPUS.}
 ##'   \item{keep.best}{return the best overall solution and not the best
 ##'     solution in the last population. Defaults to true.}
 ##'   \item{\code{sigma}}{Inital variance estimates. Can be a single
 ##'     number or a vector of length \eqn{D}, where \eqn{D} is the dimension
 ##'     of the parameter space.}
+##'   \item{\code{stop.tolx}}{Relative tolerance convergence criterion,
+##'     as a fraction of the initial \eqn{\sigma}. Defaults to a tiny 
+##'     value of 1e-12.}
+##'   \item{\code{covar}}{Initial parameter covariance matrix. Ideally saved
+##'     from a previous iteration of CMA-ES using }
 ##'   \item{\code{mu}}{Population size.}
 ##'   \item{\code{lambda}}{Number of offspring. Must be greater than or
 ##'     equal to \code{mu}.}
@@ -57,9 +75,6 @@
 ##'   \item{\code{diag.pop}}{Save current population in each iteration.}
 ##'   \item{\code{diag.value}}{Save function values of the current
 ##'     population in each iteration.}}
-##'   \item{\code{stop.tolx}}{Relative tolerance convergence criterion,
-##'     as a fraction of the initial \eqn{\sigma}. Defaults to a tiny 
-##'     value of 1e-12.}
 ##'
 ##' @param par Initial values for the parameters to be optimized over.
 ##' @param fn A function to be minimized (or maximized), with first
@@ -82,6 +97,7 @@
 ##'         had been reached.}}}
 ##'   \item{message}{Always set to \code{NULL}, provided for call
 ##'     compatibility with \code{optim}.}
+##'   \item{covar}{Final parameter covariance matrix.}
 ##'   \item{diagnostic}{List containing diagnostic information. Possible elements
 ##'     are: \describe{
 ##'       \item{sigma}{Vector containing the step size \eqn{\sigma}{sigma}
@@ -115,6 +131,9 @@
 ##'
 ##' @keywords optimize
 ##' @export
+
+library(parallel)
+
 cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
 {
   norm <- function(x)
@@ -128,12 +147,13 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
       return (v)
   }
 
-  nthreads <- controlParam("nthreads", 1)
-  if(nthreads > 1)
+  nparallel <- controlParam("nparallel", 1)
+  if(nparallel > 1)
   {
-    control$nthreads=1
+    nparallel = floor(nparallel)
+    control$nparallel=1
     res = list()
-    for(i in 1:nthreads)
+    for(i in 1:nparallel)
     { 
       res[[i]] = mcparallel(cmaeshpc(par=par, fn=fn, lower=lower, upper=upper, 
         control=control, ...))
@@ -141,12 +161,23 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
     rval = mccollect(res)
     return(rval)
   }
-  
+
   time_start = proc.time()[['elapsed']]
   
   ## Inital solution:
   xmean <- par
   N <- length(xmean)
+  
+  # Parallelization efficiency check - make sure that number of children divides evenly by 
+  # the number of threads to evaluate the model with
+  nthreads <- controlParam("nthreads", 1)
+  stopifnot(nthreads >= 1)
+  lambda      <- controlParam("lambda", 4+floor(3*log(N)))
+  stopifnot((lambda %% nthreads) == 0)
+  evalparallel = nthreads > 1
+  vectorized  <- controlParam("vectorized", FALSE)
+  stopifnot(!(vectorized && (nthreads > 1)))
+  
   ## Box constraints:
   if (missing(lower))
     lower <- rep(-Inf, N)
@@ -165,9 +196,8 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
   maxiter     <- controlParam("maxit", 100 * N^2)
   maxwalltime <- controlParam("maxwalltime", Inf)
   sigma       <- controlParam("sigma", 0.5)
-  sc_tolx     <- controlParam("stop.tolx", 1e-12 * sigma) ## Undocumented stop criterion
+  sc_tolx     <- controlParam("stop.tolx", 1e-12 * sigma)
   keep.best   <- controlParam("keep.best", TRUE)
-  vectorized  <- controlParam("vectorized", FALSE)
 
   ## Logging options:
   log.all    <- controlParam("diag", FALSE)
@@ -177,7 +207,8 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
   log.pop    <- controlParam("diag.pop", log.all)
 
   ## Strategy parameter setting (defaults as recommended by Nicolas Hansen):
-  lambda      <- controlParam("lambda", 4+floor(3*log(N)))
+  ## lambda must be read first to ensure efficient parallelization; see above.
+  # lambda      <- controlParam("lambda", 4+floor(3*log(N)))
   mu          <- controlParam("mu", floor(lambda/2))
   weights     <- controlParam("weights", log(mu+1) - log(1:mu))
   weights     <- weights/sum(weights)
@@ -201,7 +232,8 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
   ## Bookkeeping variables for the best solution found so far:
   best.fit <- Inf
   best.par <- NULL
-
+  best.covar <- NULL
+  best.found <- FALSE
   
   sigmaisvec = length(sigma) > 1
   
@@ -228,7 +260,8 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
   B <- diag(N)
   D <- B
   BD <- B
-  C <- B
+  C <- controlParam("covar",B)
+  stopifnot(!is.null(d <- dim(C)) && all(d == N))
 
   chiN <- sqrt(N) * (1-1/(4*N)+1/(21*N^2))
   
@@ -278,7 +311,13 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
       if (vectorized) {
         yeval <- fn(vx, ...) * fnscale
       } else {
-        yeval <- apply(vx, 2, function(x) fn(x, ...) * fnscale)
+        if(evalparallel)
+        {
+          yeval <- unlist(mclapply(lapply(seq_len(ncol(vx)), function(i) vx[,i]), 
+            function(x) fn(x, ...) * fnscale, mc.cores = nthreads, mc.preschedule = FALSE))
+        } else {
+          yeval <- apply(vx, 2, function(x) fn(x, ...) * fnscale)
+        }
       }
       y[toeval] = yeval
       pen[toeval] = peneval
@@ -300,7 +339,8 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
       {
         stop(paste("wb=",wb," is null/nan/na; aborting"))
       }
-      if (y[valid][wb] < best.fit) 
+      best.found = (y[valid][wb] < best.fit)
+      if(best.found)
       {
         best.fit <- y[valid][wb]
         best.par <- arx[,valid,drop=FALSE][,wb]
@@ -331,7 +371,7 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
     C <- (1-ccov) * C + ccov * (1/mucov) *
       (pc %o% pc + (1-hsig) * cc*(2-cc) * C) +
         ccov * (1-1/mucov) * BDz %*% diag(weights) %*% t(BDz)
-    
+    if(best.found) best.covar <- C
     ## Adapt step size sigma:
     sigma <- sigma * exp((norm(ps)/chiN - 1)*cs/damps)
     
@@ -390,7 +430,7 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
     time_elapsed = (proc.time()[['elapsed']] - time_start)/60.0
     if (trace)
     {
-      message(sprintf("Iteration %i of %i, t_elapsed=%.2f/%.2f: current fitness %f, params=[%s], sigmas=[%s]",
+      message(sprintf("Iteration %i of %i, t_elapsed=%.2f/%.2f: current fitness %.3e, params=[%s], sigmas=[%s]",
                       iter, maxiter, time_elapsed, maxwalltime, arfitness[1] * fnscale,
                       paste(sprintf("%.2e",xmean),collapse=' '),paste(sprintf("%.2e",sigma),collapse=' ')))
     }
@@ -423,7 +463,7 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
               value=best.fit / fnscale,
               counts=cnt,
               convergence=ifelse(iter >= maxiter, 1L, 0L),
-              covar=C,
+              covar=best.covar,
               message=msg,
               constr.violations=cviol,
               diagnostic=log

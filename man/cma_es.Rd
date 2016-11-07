@@ -1,12 +1,12 @@
-\name{cma_es}
-\alias{cma_es}
+\name{cmaeshpc}
+\alias{cmaeshpc}
 \title{Covariance matrix adapting evolutionary strategy}
-\usage{cma_es(par, fn, ..., lower, upper, control=list())
+\usage{cmaeshpc(par, fn, ..., lower, upper, control=list())
 cmaES(...)
 }
 \description{Global optimization procedure using a covariance matrix adapting
 evolutionary strategy.}
-\details{\code{cma_es}: Note that arguments after \code{\dots} must be matched exactly.
+\details{\code{cmaeshpc}: Note that arguments after \code{\dots} must be matched exactly.
 By default this function performs minimization, but it will
 maximize if \code{control$fnscale} is negative. It can usually be
 used as a drop in replacement for \code{optim}, but do note, that
@@ -18,10 +18,17 @@ arguments during optimization. The columns correspond to the
 \code{lambda} new individuals created in each iteration of the
 ES. In this case \code{fn} must return a numeric vector of
 \code{lambda} corresponding function values. This enables you to
-do up to \code{lambda} function evaluations in parallel.
+do up to \code{lambda} function evaluations in parallel, with 
+the function handling parallelization.
 
-The \code{control} argument is a list that can supply any of the
-following components:
+There are two alternative modes of parallelization. \code{nparallel} 
+specifies the number of fits to run in parallel and independently. 
+\code{nthreads} specifies the number of \code{fn} evaluations to 
+calculate in parallel. Both use the mcparallel function internally.
+\code{nthreads} is incompatible with \code{vectorize}, but does not 
+require parallelization of \code{fn} itself.
+
+The \code{control} argument is a list that can supply any of the following components:
 \describe{
 \item{\code{fnscale}}{An overall scaling to be applied to the value
 of \code{fn} during optimization. If negative,
@@ -29,14 +36,31 @@ turns the problem into a maximization problem. Optimization is
 performed on \code{fn(par)/fnscale}.}
 \item{\code{maxit}}{The maximum number of iterations. Defaults to
 \eqn{100*D^2}, where \eqn{D} is the dimension of the parameter space.}
+\item{\code{maxwalltime}}{The maximum walltime in minutes. Defaults to
+infinite, i.e. no time limit.}
 \item{\code{stopfitness}}{Stop if function value is smaller than or
-equal to \code{stopfitness}. This is the only way for the CMA-ES
-to \dQuote{converge}.}
+equal to \code{stopfitness}. This is the main way for the CMA-ES
+to \dQuote{converge}, but see also \dQuote{stop.tolx}.}
+\item{\code{nparallel}}{Number of independent CMA-ES fits to run using 
+mcparallel. This is equivalent to calling cmaeshpc nparallel times. 
+The product of \code{nparallel} and \code{nthreads} should not 
+exceed number of system CPUS.}
+\item{\code{nthreads}}{Number of independent threads to evaluate models
+with using mcparallel. This will complete each CMA chain more quickly. 
+The product of \code{nparallel} and \code{nthreads} should not 
+exceed number of system CPUS. Unlike the \code{vectorize} method, 
+this form of parallelization is implemented within CMA-ES and does not 
+require a vectorized function. The two methods should not be combined.}
 \item{keep.best}{return the best overall solution and not the best
 solution in the last population. Defaults to true.}
 \item{\code{sigma}}{Inital variance estimates. Can be a single
 number or a vector of length \eqn{D}, where \eqn{D} is the dimension
 of the parameter space.}
+\item{\code{stop.tolx}}{Relative tolerance convergence criterion,
+as a fraction of the initial \eqn{\sigma}. Defaults to a tiny 
+value of 1e-12.}
+\item{\code{covar}}{Initial parameter covariance matrix, preferably saved
+from a previous iteration of CMA-ES using }
 \item{\code{mu}}{Population size.}
 \item{\code{lambda}}{Number of offspring. Must be greater than or
 equal to \code{mu}.}
