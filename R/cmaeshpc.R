@@ -12,12 +12,17 @@
 ##' no sophisticated convergence detection is included. Therefore you
 ##' need to choose \code{maxit} appropriately.
 ##'
-##' If you set \code{vectorize==TRUE}, \code{fn} will be passed matrix
+##' If you set \code{nthreadsvector>1}, \code{fn} will be passed matrix
 ##' arguments during optimization. The columns correspond to the
 ##' \code{lambda} new individuals created in each iteration of the
 ##' ES. In this case \code{fn} must return a numeric vector of
 ##' \code{lambda} corresponding function values. This enables you to
-##' do up to \code{lambda} function evaluations in parallel.
+##' do up to \code{lambda} function evaluations in parallel. Note that 
+##' nthreadsvector is only used to determine how many additional \code{fn}
+##' evaluations should be done in the case that \code{fn} returns a
+##' non-finite value; otherwise, the code will only assert that 
+##' \code{nthreadsvector} <= \code{lambda} (for efficiency) and leave the 
+##' implementation of parallelization to the user.
 ##'
 ##' There are two alternative modes of parallelization. \code{nparallel} 
 ##' specifies the number of fits to run in parallel and independently. 
@@ -65,7 +70,7 @@
 ##'   \item{\code{damps}}{Damping for step-size}
 ##'   \item{\code{cs}}{Cumulation constant for step-size}
 ##'   \item{\code{ccum}}{Cumulation constant for covariance matrix}
-##'   \item{\code{vectorized}}{Is the function \code{fn} vectorized?}
+##'   \item{\code{nthreadsvector}}{Number of threads used to evaluate \code{fn}.}
 ##'   \item{\code{ccov.1}}{Learning rate for rank-one update}
 ##'   \item{\code{ccov.mu}}{Learning rate for rank-mu update}
 ##'   \item{\code{diag.sigma}}{Save current step size \eqn{\sigma}{sigma}
@@ -175,7 +180,9 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
   lambda      <- controlParam("lambda", 4+floor(3*log(N)))
   stopifnot((lambda %% nthreads) == 0)
   evalparallel = nthreads > 1
-  vectorized  <- controlParam("vectorized", FALSE)
+  nthreadsvector <- floor(controlParam("nthreadsvector", 1))
+  stopifnot(nthreadsvector >= 1 && nthreadsvector <= lambda)
+  vectorized <- nthreadsvector > 1
   stopifnot(!(vectorized && (nthreads > 1)))
   
   ## Box constraints:
@@ -299,6 +306,9 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
     while(!all(is.finite(y))) {
       toeval = which(!is.finite(y))
       neval = length(toeval)
+      # If we have a vectorized function and lambda < nthreadsvector
+      addevals = (vectorized && (neval < nthreadsvector)) || (evalparallel && (neval < nthreads))
+      if(addevals) neval = nthreadsvector
       arze <- matrix(rnorm(neval*N), ncol=neval)
       arxe <- xmean + sigma * (BD %*% arze)
       vx <- ifelse(arxe > lower, ifelse(arxe < upper, arxe, upper), lower)
@@ -319,12 +329,28 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
           yeval <- apply(vx, 2, function(x) fn(x, ...) * fnscale)
         }
       }
-      y[toeval] = yeval
-      pen[toeval] = peneval
-      for(evali in 1:neval) {
-        cole = toeval[evali]
-        arx[,cole] = arxe[,evali]
-        arz[,cole] = arze[,evali]
+      stopifnot(any(is.finite(yeval)))
+      # If a vectorized fit has done more than lambda evaluations, save only
+      # the lambda best parameters
+      if(addevals) {
+      	good = is.finite(y)
+      	y = c(y[good],yeval)
+      	pen = c(pen[good],peneval)
+      	arx = rbind(arx[,good],arxe)
+      	arz = rbind(arz[,good],arze)
+      	best = sort.int(good,index.return = TRUE,decreasing=TRUE)$ix[1:lambda]
+      	y = y[best]
+      	pen = pen[best]
+      	arx = arx[,best]
+      	arz = arz[,best]
+      } else {
+	      y[toeval] = yeval
+	      pen[toeval] = peneval
+	      for(evali in 1:neval) {
+	        cole = toeval[evali]
+	        arx[,cole] = arxe[,evali]
+	        arz[,cole] = arze[,evali]
+	      }
       }
     }
     counteval <- counteval + lambda
