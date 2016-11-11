@@ -8,9 +8,12 @@
 ##' Note that arguments after \code{\dots} must be matched exactly.
 ##' By default this function performs minimization, but it will
 ##' maximize if \code{control$fnscale} is negative. It can usually be
-##' used as a drop in replacement for \code{optim}, but do note, that
-##' no sophisticated convergence detection is included. Therefore you
-##' need to choose \code{maxit} appropriately.
+##' used as a drop in replacement for \code{optim}, but the convergence 
+##' criteria are fairly simple.
+##' 
+##' The function can tolerate failed \code{fn} evaluations and will
+##' recompute any non-finite returns. This will accomodate functions like
+##' sophisticated but fragile models with unpredictable return values.
 ##'
 ##' If you set \code{nthreadsvector>1}, \code{fn} will be passed matrix
 ##' arguments during optimization. The columns correspond to the
@@ -183,7 +186,9 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
   nthreadsvector <- floor(controlParam("nthreadsvector", 1))
   stopifnot(nthreadsvector >= 1 && nthreadsvector <= lambda)
   vectorized <- nthreadsvector > 1
-  stopifnot(!(vectorized && (nthreads > 1)))
+  parallel = vectorized || evalparallel
+  stopifnot(!parallel || (vectorized != evalparallel))
+  if(vectorized) nthreads <- nthreadsvector
   
   ## Box constraints:
   if (missing(lower))
@@ -274,6 +279,7 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
   
   iter <- 0L      ## Number of iterations
   counteval <- 0L ## Number of function evaluations
+  countfail <- 0L ## Number of function evaluations including failures/discards
   cviol <- 0L     ## Number of constraint violations
   msg <- NULL     ## Reason for terminating
   nm <- names(par) ## Names of parameters
@@ -307,8 +313,13 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
       toeval = which(!is.finite(y))
       neval = length(toeval)
       # If we have a vectorized function and lambda < nthreadsvector
-      addevals = (vectorized && (neval < nthreadsvector)) || (evalparallel && (neval < nthreads))
-      if(addevals) neval = nthreadsvector
+      addthreads = (neval < nthreads)
+      threadsmod = neval %% nthreads
+      addevals = parallel && (addthreads || (threadsmod != 0))
+      if(addevals) {
+      	if(addthreads) neval <- nthreads
+      	else neval <- neval + (nthreads - threadsmod)
+      }
       arze <- matrix(rnorm(neval*N), ncol=neval)
       arxe <- xmean + sigma * (BD %*% arze)
       vx <- ifelse(arxe > lower, ifelse(arxe < upper, arxe, upper), lower)
@@ -329,15 +340,18 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
           yeval <- apply(vx, 2, function(x) fn(x, ...) * fnscale)
         }
       }
-      stopifnot(any(is.finite(yeval)))
+      # Give up if the model can't find a single finite value in lambda evals
+      goodeval = is.finite(yeval)
+      stopifnot((neval < lambda) || any(goodeval))
+      countfail <- countfail + !is.finite(yeval)
       # If a vectorized fit has done more than lambda evaluations, save only
       # the lambda best parameters
       if(addevals) {
       	good = is.finite(y)
       	y = c(y[good],yeval)
       	pen = c(pen[good],peneval)
-      	arx = rbind(arx[,good],arxe)
-      	arz = rbind(arz[,good],arze)
+      	arx = cbind(arx[,good],arxe)
+      	arz = cbind(arz[,good],arze)
       	best = sort.int(good,index.return = TRUE,decreasing=TRUE)$ix[1:lambda]
       	y = y[best]
       	pen = pen[best]
@@ -353,6 +367,7 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
 	      }
       }
     }
+    # TODO: Not sure if this should change to count all evaluations including addevals?
     counteval <- counteval + lambda
 
     arfitness <- y * pen
