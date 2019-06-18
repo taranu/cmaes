@@ -203,6 +203,7 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
 
   ## Parameters:
   trace       <- controlParam("trace", FALSE)
+  tracestep   <- controlParam("tracestep", 100L)
   fnscale     <- controlParam("fnscale", 1)
   stopfitness <- controlParam("stopfitness", -Inf)
   maxiter     <- controlParam("maxit", 100 * N^2)
@@ -469,7 +470,7 @@ cmaeshpc <- function(par, fn, ..., lower, upper, control=list())
         message("Flat fitness function. Increasing sigma.")
     }
     time_elapsed = (proc.time()[['elapsed']] - time_start)/60.0
-    if (trace)
+    if (trace & (iter %% tracestep)==0)
     {
       message(sprintf("Iteration %i of %i, t_elapsed=%.2f/%.2f: current fitness %.3e, params=[%s], sigmas=[%s]",
                       iter, maxiter, time_elapsed, maxwalltime, arfitness[1] * fnscale,

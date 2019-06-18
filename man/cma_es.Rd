@@ -2,7 +2,6 @@
 \alias{cmaeshpc}
 \title{Covariance matrix adapting evolutionary strategy}
 \usage{cmaeshpc(par, fn, ..., lower, upper, control=list())
-cmaES(...)
 }
 \description{Global optimization procedure using a covariance matrix adapting
 evolutionary strategy.}
